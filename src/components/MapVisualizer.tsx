@@ -10,10 +10,9 @@ import type {
   ECElementEvent,
 } from "echarts";
 import { useChinaMap } from "@/hooks/useChinaMap";
-import type { MapBBox } from "@/hooks/useChinaMap";
 import type { AnalyzeResponse, LayerMode } from "@/types/analysis";
 import { useAnalysisStore } from "@/store/useAnalysisStore";
-import { formatNumber, formatSigned, clamp } from "@/lib/format";
+import { formatNumber, formatSigned } from "@/lib/format";
 import { MapPin, Loader2, WifiOff } from "lucide-react";
 
 interface MapVisualizerProps {
@@ -36,7 +35,6 @@ function buildOption(
   data: AnalyzeResponse,
   mode: LayerMode,
   activeRegion: string | null,
-  bbox: MapBBox | null,
 ): EChartsOption {
   const heatmap = data.heatmap;
   const scatter = data.scatter;
@@ -47,8 +45,6 @@ function buildOption(
   const pointColor = (net: number) => (net >= 0 ? INFLOW_COLOR : OUTFLOW_COLOR);
   const pointSize = (activity: number) =>
     8 + 34 * ((activity - minActivity) / span);
-
-  const [cLng, cLat] = data.meta.center;
 
   const tooltipFormatter = (params: TooltipComponentFormatterCallbackParams) => {
     const p = Array.isArray(params) ? params[0] : params;
@@ -74,9 +70,8 @@ function buildOption(
   const baseGeo: GeoComponentOption = {
     map: "china",
     roam: true,
-    center: [cLng, cLat],
-    zoom: 4,
-    scaleLimit: { min: 1, max: 1200 },
+    zoom: 1,
+    scaleLimit: { min: 0.5, max: 50 },
     left: 0,
     right: 0,
     top: 0,
@@ -93,18 +88,14 @@ function buildOption(
     select: { disabled: true },
   };
 
-  if (bbox && data.meta.bounds) {
+  if (data.meta.bounds) {
     const [minLng, minLat, maxLng, maxLat] = data.meta.bounds;
-    const mapLngSpan = Math.max(bbox.maxLng - bbox.minLng, 0.0001);
-    const mapLatSpan = Math.max(bbox.maxLat - bbox.minLat, 0.0001);
-    const dataLngSpan = Math.max(maxLng - minLng, 0.01);
-    const dataLatSpan = Math.max(maxLat - minLat, 0.01);
-    const FIT = 0.62;
-    baseGeo.zoom = clamp(
-      FIT * Math.min(mapLngSpan / dataLngSpan, mapLatSpan / dataLatSpan),
-      1,
-      2000,
-    );
+    const PAD_LNG = Math.max((maxLng - minLng) * 0.18, 0.04);
+    const PAD_LAT = Math.max((maxLat - minLat) * 0.18, 0.04);
+    baseGeo.boundingCoords = [
+      [minLng - PAD_LNG, maxLat + PAD_LAT],
+      [maxLng + PAD_LNG, minLat - PAD_LAT],
+    ];
   }
 
   const series: SeriesOption[] = [];
@@ -112,13 +103,22 @@ function buildOption(
   if (mode === "heatmap" || mode === "combined") {
     series.push({
       name: "活跃度热力",
-      type: "heatmap",
+      type: "scatter",
       coordinateSystem: "geo",
-      data: heatmap.map((p) => [p.coords[0], p.coords[1], p.value]),
-      pointSize: 10,
-      blurSize: 22,
+      data: heatmap.map((p) => ({
+        value: [p.coords[0], p.coords[1], p.value],
+      })),
+      symbolSize: (val: number[]) => {
+        const v = val[2] ?? 0;
+        return 8 + 28 * (v / maxActivity);
+      },
+      itemStyle: {
+        opacity: 0.55,
+      },
+      blendMode: "lighter",
       progressive: 2000,
       animation: true,
+      zlevel: 1,
     });
   }
 
@@ -250,8 +250,8 @@ export default function MapVisualizer({ data, mode }: MapVisualizerProps) {
 
   const option = useMemo(() => {
     if (status !== "ready") return null;
-    return buildOption(data, mode, activeRegion, bbox);
-  }, [data, mode, activeRegion, status, bbox]);
+    return buildOption(data, mode, activeRegion);
+  }, [data, mode, activeRegion, status]);
 
   useEffect(() => {
     if (!wrapRef.current) return;

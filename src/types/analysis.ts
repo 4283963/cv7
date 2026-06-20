@@ -37,12 +37,26 @@ export interface AnalyzeStats {
   topOutflowRegion: string;
 }
 
+export interface ForecastItem {
+  name: string;
+  coords: Coord;
+  history: number[];
+  forecast: number[];
+}
+
+export interface Forecast {
+  currentHour: number;
+  horizonHours: number;
+  items: ForecastItem[];
+}
+
 export interface AnalyzeResponse {
   meta: AnalyzeMeta;
   heatmap: HeatmapPoint[];
   scatter: ScatterPoint[];
   ranking: RankingItem[];
   stats: AnalyzeStats;
+  forecast: Forecast;
 }
 
 export type LayerMode = "heatmap" | "scatter" | "combined";

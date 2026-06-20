@@ -14,6 +14,7 @@ import StatCard from "@/components/StatCard";
 import MapVisualizer from "@/components/MapVisualizer";
 import RegionRanking from "@/components/RegionRanking";
 import LayerToggle from "@/components/LayerToggle";
+import ForecastChart from "@/components/ForecastChart";
 import { formatNumber } from "@/lib/format";
 
 export default function Dashboard() {
@@ -36,7 +37,7 @@ export default function Dashboard() {
     );
   }
 
-  const { meta, stats, ranking } = data;
+  const { meta, stats, ranking, forecast } = data;
 
   return (
     <div className="min-h-screen px-6 py-8">
@@ -52,6 +53,9 @@ export default function Dashboard() {
             <p className="text-xs text-white/45">
               数据源：{source ?? "未知"}
               {meta.date ? ` · 分析日期 ${meta.date}` : ""}
+              {forecast?.currentHour !== undefined
+                ? ` · 当前数据截止至 ${String(forecast.currentHour).padStart(2, "0")}:00`
+                : ""}
             </p>
           </div>
         </div>
@@ -104,21 +108,29 @@ export default function Dashboard() {
       </section>
 
       <section className="mx-auto grid max-w-[1400px] grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
-        <div className="panel flex flex-col p-5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-display text-base font-semibold text-white">
-                高频停放区域分布
-              </h2>
-              <p className="text-xs text-white/45">
-                气泡半径 = 活跃度 · 颜色 = 潮汐方向（青色净流入 / 琥珀净流出）
-              </p>
+        <div className="flex flex-col gap-6">
+          <div className="panel flex flex-col p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-semibold text-white">
+                  高频停放区域分布
+                </h2>
+                <p className="text-xs text-white/45">
+                  气泡半径 = 活跃度 · 颜色 = 潮汐方向（青色净流入 / 琥珀净流出）
+                </p>
+              </div>
+              <LayerToggle mode={mode} onChange={setMode} />
             </div>
-            <LayerToggle mode={mode} onChange={setMode} />
+            <div className="flex-1">
+              <MapVisualizer data={data} mode={mode} />
+            </div>
           </div>
-          <div className="flex-1">
-            <MapVisualizer data={data} mode={mode} />
-          </div>
+
+          {forecast && forecast.items.length > 0 && (
+            <div className="h-[380px]">
+              <ForecastChart forecast={forecast} />
+            </div>
+          )}
         </div>
 
         <div className="h-[620px] lg:h-auto">

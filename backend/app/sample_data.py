@@ -38,7 +38,7 @@ def _jitter(center: float, scale: float, size: int) -> np.ndarray:
     return center + rng.normal(0.0, scale, size=size)
 
 
-def generate_dataframe(n: int = 3200) -> pd.DataFrame:
+def generate_dataframe(n: int = 3200, history_days: int = 5) -> pd.DataFrame:
     residential = [h for h in HOTSPOTS if h["role"] == "residential"]
     business = [h for h in HOTSPOTS if h["role"] == "business"]
     mixed = [h for h in HOTSPOTS if h["role"] == "mixed"]
@@ -47,50 +47,83 @@ def generate_dataframe(n: int = 3200) -> pd.DataFrame:
 
     rows: list[dict] = []
     base_date = datetime(2026, 6, 20)
+    days_total = history_days + 1
 
-    morning = int(n * 0.55)
-    evening = n - morning
+    per_day = n // days_total
+    remainder = n - per_day * days_total
 
-    for i in range(n):
-        is_morning = i < morning
-        if is_morning:
-            hour = rng.choice([7, 7, 8, 8, 8, 9])
-            o_pool, d_pool = origin_pool, dest_pool
+    morning_ratio = 0.42
+    midday_ratio = 0.18
+    evening_ratio = 0.40
+    daily_variation = [0.88, 0.94, 1.0, 1.03, 1.05, 1.0]
+
+    for day_offset in range(days_total):
+        day_rows = per_day + (remainder if day_offset == days_total - 1 else 0)
+        if day_rows <= 0:
+            continue
+        is_last_day = day_offset == days_total - 1
+        day_date = base_date - timedelta(days=history_days - day_offset)
+        variation = daily_variation[day_offset % len(daily_variation)]
+
+        if is_last_day:
+            morning = int(day_rows * (morning_ratio + midday_ratio))
+            evening = 0
+            midday = 0
+            day_rows = morning
         else:
-            hour = rng.choice([17, 17, 18, 18, 19, 20])
-            o_pool, d_pool = dest_pool, origin_pool
+            morning = int(day_rows * morning_ratio)
+            midday = int(day_rows * midday_ratio)
+            evening = day_rows - morning - midday
 
-        o_idx = _weighted_pick(o_pool, 1)[0]
-        d_idx = _weighted_pick(d_pool, 1)[0]
-        # avoid identical loops occasionally
-        if o_idx == d_idx and rng.random() < 0.5:
+        for i in range(day_rows):
+            if i < morning:
+                phase = "morning"
+            elif i < morning + midday:
+                phase = "midday"
+            else:
+                phase = "evening"
+
+            if phase == "morning":
+                hour = rng.choice([7, 7, 8, 8, 8, 9])
+                o_pool, d_pool = origin_pool, dest_pool
+            elif phase == "midday":
+                hour = rng.choice([10, 11, 12, 13])
+                o_pool, d_pool = residential + mixed + business, business + mixed + residential
+            else:
+                hour = rng.choice([17, 17, 18, 18, 19, 20])
+                o_pool, d_pool = dest_pool, origin_pool
+
+            o_idx = _weighted_pick(o_pool, 1)[0]
             d_idx = _weighted_pick(d_pool, 1)[0]
+            if o_idx == d_idx and rng.random() < 0.5:
+                d_idx = _weighted_pick(d_pool, 1)[0]
 
-        o = o_pool[o_idx]
-        d = d_pool[d_idx]
-        if o is d:
-            d = d_pool[(d_idx + 1) % len(d_pool)]
+            o = o_pool[o_idx]
+            d = d_pool[d_idx]
+            if o is d:
+                d = d_pool[(d_idx + 1) % len(d_pool)]
 
-        rent_lng = _jitter(o["lng"], 0.006, 1)[0]
-        rent_lat = _jitter(o["lat"], 0.006, 1)[0]
-        return_lng = _jitter(d["lng"], 0.006, 1)[0]
-        return_lat = _jitter(d["lat"], 0.006, 1)[0]
+            jitter_scale = 0.006 / (variation ** 0.5)
+            rent_lng = _jitter(o["lng"], jitter_scale, 1)[0]
+            rent_lat = _jitter(o["lat"], jitter_scale, 1)[0]
+            return_lng = _jitter(d["lng"], jitter_scale, 1)[0]
+            return_lat = _jitter(d["lat"], jitter_scale, 1)[0]
 
-        minute = int(rng.integers(0, 60))
-        rent_time = base_date.replace(hour=int(hour), minute=minute, second=0)
-        duration = int(rng.integers(5, 45))
-        return_time = rent_time + timedelta(minutes=duration)
+            minute = int(rng.integers(0, 60))
+            rent_time = day_date.replace(hour=int(hour), minute=minute, second=0)
+            duration = int(rng.integers(5, 45))
+            return_time = rent_time + timedelta(minutes=duration)
 
-        rows.append(
-            {
-                "rent_time": rent_time,
-                "return_time": return_time,
-                "rent_lng": round(float(rent_lng), 6),
-                "rent_lat": round(float(rent_lat), 6),
-                "return_lng": round(float(return_lng), 6),
-                "return_lat": round(float(return_lat), 6),
-            }
-        )
+            rows.append(
+                {
+                    "rent_time": rent_time,
+                    "return_time": return_time,
+                    "rent_lng": round(float(rent_lng), 6),
+                    "rent_lat": round(float(rent_lat), 6),
+                    "return_lng": round(float(return_lng), 6),
+                    "return_lat": round(float(return_lat), 6),
+                }
+            )
 
     return pd.DataFrame(rows)
 
